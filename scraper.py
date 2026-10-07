@@ -1,5 +1,7 @@
 import os
-import requests
+import asyncio
+from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 from supabase import create_client, Client
 
 SUPABASE_URL = "https://bswaocmeujbbsnvwvpoq.supabase.co"
@@ -7,98 +9,61 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*'
-}
-
-def kariyer_kapisi_cek():
-    """Kariyer Kapısı İşe Alım API'sinden aktif ilanları çeker"""
+async def scrape_site(page, url, kurum_adi):
     ilanlar = []
-    url = "https://isealimkariyerkapisi.cbiko.gov.tr/api/announcement/getlist"
-    payload = {"pageIndex": 1, "pageSize": 20, "sortField": "createdDate", "sortOrder": "DESC"}
     try:
-        res = requests.post(url, json=payload, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get('data', {}).get('items', []) or data.get('items', [])
-            for item in items:
-                title = item.get('title') or item.get('header') or item.get('announcementTitle')
-                id_val = item.get('id') or item.get('announcementId')
-                if title:
-                    link = f"https://kariyerkapisi.cbiko.gov.tr/isealim/ilan/{id_val}" if id_val else "https://kariyerkapisi.cbiko.gov.tr/isealim"
-                    ilanlar.append({
-                        "baslik": str(title)[:180],
-                        "link": link,
-                        "kurum": "Kariyer Kapısı",
-                        "tarih": "Güncel"
-                    })
+        print(f"Tarayıcı açılıyor: {kurum_adi} ({url})")
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+        await page.wait_for_timeout(3000) # Sayfanın JS render tamamlaması için bekleme
+        
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+        
+        for a in soup.find_all('a', href=True):
+            text = a.get_text(strip=True)
+            href = a['href']
+            
+            if len(text) > 10 and any(k in text.lower() for k in ['alımı', 'personel', 'memur', 'sözleşmeli', 'akademik', 'duyuru', 'sınav', 'kpss', 'ilan']):
+                if href.startswith('http'):
+                    full_link = href
+                elif href.startswith('/'):
+                    base = '/'.join(url.split('/')[:3])
+                    full_link = f"{base}{href}"
+                else:
+                    full_link = f"{url.rstrip('/')}/{href}"
+
+                ilanlar.append({
+                    "baslik": text[:180],
+                    "link": full_link,
+                    "kurum": kurum_adi,
+                    "tarih": "Güncel"
+                })
     except Exception as e:
-        print(f"Kariyer Kapısı API Hatası: {e}")
+        print(f"{kurum_adi} taranırken hata: {e}")
     return ilanlar
 
-def sbb_kamu_ilan_cek():
-    """SBB Kamu İlan Portalının API servisinden aktif ilanları çeker"""
-    ilanlar = []
-    url = "https://kamuilan.sbb.gov.tr/api/Ilan/List?pageSize=20&pageNumber=1"
-    try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get('data', []) or data.get('items', []) if isinstance(data, dict) else data
-            if isinstance(items, list):
-                for item in items:
-                    title = item.get('baslik') or item.get('title') or item.get('kurumAdi')
-                    id_val = item.get('id')
-                    if title:
-                        link = f"https://kamuilan.sbb.gov.tr/ilan/{id_val}" if id_val else "https://kamuilan.sbb.gov.tr/"
-                        ilanlar.append({
-                            "baslik": str(title)[:180],
-                            "link": link,
-                            "kurum": "SBB Kamu İlan",
-                            "tarih": "Güncel"
-                        })
-    except Exception as e:
-        print(f"SBB Kamu İlan Hatası: {e}")
-    return ilanlar
-
-def gsb_duyuru_cek():
-    """GSB Personel Genel Müdürlüğü Duyuruları"""
-    ilanlar = []
-    url = "https://pgm.gsb.gov.tr/"
-    try:
-        from bs4 import BeautifulSoup
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                text = a.get_text(strip=True)
-                href = a['href']
-                if len(text) > 12 and any(k in text.lower() for k in ['alımı', 'personel', 'sınav', 'duyuru', 'kpss', 'kura']):
-                    full_link = href if href.startswith('http') else f"https://pgm.gsb.gov.tr/{href.lstrip('/')}"
-                    ilanlar.append({
-                        "baslik": text[:180],
-                        "link": full_link,
-                        "kurum": "GSB Personel",
-                        "tarih": "Güncel"
-                    })
-    except Exception as e:
-        print(f"GSB Hatası: {e}")
-    return ilanlar
-
-def main():
+async def main():
     toplanan = []
-    
-    print("1. Kariyer Kapısı çekiliyor...")
-    toplanan.extend(kariyer_kapisi_cek())
-    
-    print("2. SBB Kamu İlan çekiliyor...")
-    toplanan.extend(sbb_kamu_ilan_cek())
-    
-    print("3. GSB Personel çekiliyor...")
-    toplanan.extend(gsb_duyuru_cek())
+    async with async_playwright() as p:
+        # Gerçek Chrome tarayıcı başlatılıyor
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
 
-    print(f"Toplam {len(toplanan)} adet ilan toplandı.")
+        # 1. Kamu İlan SBB
+        toplanan.extend(await scrape_site(page, "https://kamuilan.sbb.gov.tr/", "SBB Kamu İlan"))
+        
+        # 2. Kariyer Kapısı
+        toplanan.extend(await scrape_site(page, "https://kariyerkapisi.cbiko.gov.tr/isealim", "Kariyer Kapısı"))
+        
+        # 3. GSB Personel
+        toplanan.extend(await scrape_site(page, "https://pgm.gsb.gov.tr/", "GSB Personel"))
+
+        await browser.close()
+
+    print(f"\nToplam {len(toplanan)} adet benzersiz ilan toplandı.")
 
     basarili = 0
     for item in toplanan:
@@ -106,9 +71,9 @@ def main():
             supabase.table('ilanlar').upsert(item, on_conflict='link').execute()
             basarili += 1
         except Exception as e:
-            print(f"Yazma hatası: {e}")
+            pass
 
-    print(f"Supabase'e başarıyla aktarılan: {basarili}")
+    print(f"Supabase'e başarıyla aktarılan ilan sayısı: {basarili}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
