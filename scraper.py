@@ -3,74 +3,64 @@ import requests
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
 
-# Supabase Bağlantısı
 SUPABASE_URL = "https://bswaocmeujbbsnvwvpoq.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzd2FvY21ldWpiYnNudnd2cG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzNzU3OTAsImV4cCI6MjEwNjk1MTc5MH0.50zNzY3xCDf0yfNaKbuYIxdjPKA2n7gH_5Zk-SR8Qq8"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-def ilani_kaydet(baslik, link, kurum, tarih):
-    """Veritabanına mükerrer kontrolü ile ilan ekler"""
-    try:
-        var_mi = supabase.table("duyurular").select("id").eq("link", link).execute()
-        if len(var_mi.data) == 0:
-            supabase.table("duyurular").insert({
-                "baslik": baslik,
-                "link": link,
-                "kurum": kurum,
-                "tarih": tarih
-            }).execute()
-            print(f"[YENİ EKLENDİ] {kurum}: {baslik}")
-        else:
-            print(f"[MEVCUT] {baslik}")
-    except Exception as e:
-        print(f"Hata oluştu: {e}")
 
-# -------------------------------------------------------------
-# 1. GSB PGM Duyurular Scraper
-# -------------------------------------------------------------
-def gsb_cek():
-    url = "https://pgm.gsb.gov.tr/"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def ilanlari_cikar():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    # Test ve başlangıç verisi (Sitenin boş kalmaması ve bağlantıyı doğrulamak için)
+    ilanlar = [
+        {
+            "baslik": "Sistem Bağlantı Test İlanı - KPSS Personel Alımı",
+            "link": "https://www.resmigazete.gov.tr",
+            "kurum": "Kamu Personeli Portalı",
+            "tarih": "Bugün"
+        }
+    ]
+    
+    # Örnek kaynak: Resmi Gazete / İlan Portalı tarama
+    url = "https://www.resmigazete.gov.tr/ilanlar"
     try:
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+        response = requests.get(url, headers=headers, timeout=10)
+        print(f"Web sitesi yanıt kodu: {response.status_code}")
         
-        duyurular = soup.find_all("a", href=True)
-        for d in duyurular:
-            link = d["href"]
-            if not link.startswith("http"):
-                link = "https://pgm.gsb.gov.tr" + link
-            baslik = d.text.strip()
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            links = soup.find_all('a', href=True)
             
-            if len(baslik) > 10 and ("Duyuru" in baslik or "Alım" in baslik or "Sınav" in baslik or "KPSS" in baslik):
-                ilani_kaydet(baslik, link, "GSB (Gençlik ve Spor Bakanlığı)", "Güncel")
+            for a in links:
+                text = a.get_text(strip=True)
+                href = a['href']
+                
+                # İlan içeren kelimeleri filtreleme
+                if any(kelime in text.lower() for kelime in ['memur', 'alımı', 'personel', 'kpss', 'akademik']):
+                    full_link = href if href.startswith('http') else f"https://www.resmigazete.gov.tr/{href.lstrip('/')}"
+                    ilanlar.append({
+                        "baslik": text[:150],
+                        "link": full_link,
+                        "kurum": "Resmi Gazete",
+                        "tarih": "Güncel"
+                    })
     except Exception as e:
-        print(f"GSB çekilirken hata: {e}")
+        print(f"Scrape sırasında hata oluştu: {e}")
 
-# -------------------------------------------------------------
-# 2. İlan.gov.tr Kamu-Akademik Personel Scraper (Kategori 8)
-# -------------------------------------------------------------
-def ilan_gov_cek():
-    url = "https://www.ilan.gov.tr/kategori/8/kamu-akademik-personel"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        ilanlar = soup.find_all("a", href=True)
-        for d in ilanlar:
-            link = d["href"]
-            if "/detail/" in link or "/ilan/" in link:
-                if not link.startswith("http"):
-                    link = "https://www.ilan.gov.tr" + link
-                baslik = d.text.strip()
-                if len(baslik) > 15:
-                    ilani_kaydet(baslik, link, "İlan.gov.tr (Kamu-Akademik)", "Güncel")
-    except Exception as e:
-        print(f"İlan.gov.tr çekilirken hata: {e}")
+    print(f"Toplam {len(ilanlar)} adet ilan işleniyor...")
+
+    # Supabase veritabanına aktarma
+    eklenen_sayisi = 0
+    for ilan in ilanlar:
+        try:
+            res = supabase.table('ilanlar').upsert(ilan, on_conflict='link').execute()
+            eklenen_sayisi += 1
+        except Exception as err:
+            print(f"Veri ekleme hatası ({ilan['baslik'][:20]}...): {err}")
+            
+    print(f"Başarıyla Supabase'e kaydedilen: {eklenen_sayisi}")
 
 if __name__ == "__main__":
-    print("Scraper çalışmaya başladı...")
-    gsb_cek()
-    ilan_gov_cek()
-    print("Scraping işlemi tamamlandı.")
+    ilanlari_cikar()
