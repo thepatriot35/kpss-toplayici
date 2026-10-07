@@ -1,5 +1,6 @@
 import os
 import requests
+from bs4 import BeautifulSoup
 from supabase import create_client, Client
 
 SUPABASE_URL = "https://bswaocmeujbbsnvwvpoq.supabase.co"
@@ -7,65 +8,79 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def ilan_gov_tr_api():
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
+
+def resmi_gazete_kamu_ilanlari():
+    """Resmi Gazete'de yayınlanan güncel kamu ve akademik alım ilanları"""
     ilanlar = []
-    # ilan.gov.tr Mobil API uç noktası (Akademik & Kamu Personel Alımları)
-    url = "https://www.ilan.gov.tr/api/v1/search/category/8?pageSize=30&page=0"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-        'Accept': 'application/json, text/plain, */*',
-        'Origin': 'https://www.ilan.gov.tr',
-        'Referer': 'https://www.ilan.gov.tr/'
-    }
-    
+    url = "https://www.resmigazete.gov.tr/ilanlar"
     try:
-        res = requests.get(url, headers=headers, timeout=15)
-        print(f"API Yanıt Kodu: {res.status_code}")
-        
+        res = requests.get(url, headers=HEADERS, timeout=10)
         if res.status_code == 200:
-            json_data = res.json()
-            # API'den gelen öğeleri süz
-            items = json_data.get('data', {}).get('items', [])
-            
-            for item in items:
-                title = item.get('title') or item.get('header') or item.get('titleText')
-                ilan_id = item.get('id')
-                
-                if title and ilan_id:
+            soup = BeautifulSoup(res.content, 'html.parser')
+            for a in soup.find_all('a', href=True):
+                text = a.get_text(strip=True)
+                href = a['href']
+                if len(text) > 12 and any(k in text.lower() for k in ['alımı', 'personel', 'memur', 'sözleşmeli', 'akademik', 'rektörlük', 'bakanlığı']):
+                    full_link = href if href.startswith('http') else f"https://www.resmigazete.gov.tr/{href.lstrip('/')}"
                     ilanlar.append({
-                        "baslik": str(title)[:180],
-                        "link": f"https://www.ilan.gov.tr/ilan/{ilan_id}",
-                        "kurum": "İlan.gov.tr (Kamu & Akademik)",
+                        "baslik": text[:180],
+                        "link": full_link,
+                        "kurum": "Resmi Gazete Kamu İlanları",
                         "tarih": "Güncel"
                     })
     except Exception as e:
-        print(f"API İstek Hatası: {e}")
-        
+        print(f"Resmi Gazete tarama hatası: {e}")
+    return ilanlar
+
+def gsb_duyurulari():
+    """Gençlik ve Spor Bakanlığı Personel Alım Duyuruları"""
+    ilanlar = []
+    url = "https://pgm.gsb.gov.tr/"
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, 'html.parser')
+            for a in soup.find_all('a', href=True):
+                text = a.get_text(strip=True)
+                href = a['href']
+                if len(text) > 10 and any(k in text.lower() for k in ['alımı', 'personel', 'sınav', 'duyuru', 'kpss', 'kura']):
+                    full_link = href if href.startswith('http') else f"https://pgm.gsb.gov.tr/{href.lstrip('/')}"
+                    ilanlar.append({
+                        "baslik": text[:180],
+                        "link": full_link,
+                        "kurum": "GSB Personel Genel Md.",
+                        "tarih": "Güncel"
+                    })
+    except Exception as e:
+        print(f"GSB tarama hatası: {e}")
     return ilanlar
 
 def main():
-    print("İlanlar çekiliyor...")
-    toplanan = ilan_gov_tr_api()
-    print(f"Çekilen ilan sayısı: {len(toplanan)}")
+    print("Kamu kaynakları taranıyor...")
+    toplanan = []
+    
+    rg_ilanlar = resmi_gazete_kamu_ilanlari()
+    print(f"Resmi Gazete'den süzülen: {len(rg_ilanlar)}")
+    toplanan.extend(rg_ilanlar)
+    
+    gsb_ilanlar = gsb_duyurulari()
+    print(f"GSB'den süzülen: {len(gsb_ilanlar)}")
+    toplanan.extend(gsb_ilanlar)
 
-    if not tolanan:
-        # Yedek veri (API'de geçici aksama olursa veritabanı boş kalmasın)
-        toplanan.append({
-            "baslik": "Aramalar Aktif - Yeni İlanlar Bekleniyor",
-            "link": "https://www.ilan.gov.tr",
-            "kurum": "Kamu İlan Takip",
-            "tarih": "Bugün"
-        })
+    print(f"Toplam {len(toplanan)} adet güncel kamu ilanı veritabanına aktarılıyor...")
 
     basarili = 0
-    for item in tolanan:
+    for item in toplanan:
         try:
             supabase.table('ilanlar').upsert(item, on_conflict='link').execute()
             basarili += 1
         except Exception as e:
             print(f"Yazma hatası: {e}")
 
-    print(f"Supabase'e başarıyla aktarılan: {basarili}")
+    print(f"İşlem tamamlandı: {basarili} ilan Supabase'e kaydedildi.")
 
 if __name__ == "__main__":
     main()
