@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from bs4 import BeautifulSoup
 from supabase import create_client, Client
@@ -8,89 +9,82 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
-}
-
-def ilanlari_topla():
-    toplanan = []
-
-    # 1. Kaynak: İlan.gov.tr (Akademik & Kamu)
+def ilan_gov_tr_cek():
+    """ilan.gov.tr API uç noktası üzerinden doğrudan JSON çeker"""
+    ilanlar = []
     try:
-        url1 = "https://www.ilan.gov.tr/ilan/kategori/8/kamu-akademik-personel"
-        res = requests.get(url1, headers=HEADERS, timeout=15)
+        # ilan.gov.tr servis uç noktası
+        api_url = "https://www.ilan.gov.tr/api/v1/search/category/8?pageSize=20&page=0"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json, text/plain, */*'
+        }
+        res = requests.get(api_url, headers=headers, timeout=10)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.content, 'html.parser')
-            # İlan linklerini yakala
-            links = soup.find_all('a', href=True)
-            for a in links:
-                href = a['href']
-                text = a.get_text(strip=True)
-                if '/ilan/' in href and len(text) > 10:
-                    full_link = href if href.startswith('http') else f"https://www.ilan.gov.tr{href}"
-                    toplanan.append({
-                        "baslik": text[:180],
-                        "link": full_link,
+            data = res.json()
+            items = data.get('data', {}).get('items', [])
+            for item in items:
+                title = item.get('title') or item.get('header')
+                ilan_id = item.get('id')
+                if title and ilan_id:
+                    ilanlar.append({
+                        "baslik": str(title)[:180],
+                        "link": f"https://www.ilan.gov.tr/ilan/{ilan_id}",
                         "kurum": "İlan.gov.tr",
                         "tarih": "Güncel"
                     })
     except Exception as e:
-        print(f"İlan.gov.tr hata: {e}")
+        print(f"ilan.gov.tr API Hatası: {e}")
+    return ilanlar
 
-    # 2. Kaynak: GSB Personel Genel Müdürlüğü
+def gsb_cek():
+    """GSB Duyurular sayfasını tarar"""
+    ilanlar = []
     try:
-        url2 = "https://pgm.gsb.gov.tr/"
-        res = requests.get(url2, headers=HEADERS, timeout=15)
+        url = "https://pgm.gsb.gov.tr/"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, 'html.parser')
             for a in soup.find_all('a', href=True):
                 text = a.get_text(strip=True)
                 href = a['href']
-                if any(k in text.lower() for k in ['alımı', 'personel', 'sözleşmeli', 'duyuru', 'sınav', 'kpss']):
+                if len(text) > 15 and any(k in text.lower() for k in ['alımı', 'personel', 'duyuru', 'sınav', 'kpss', 'sözleşmeli']):
                     full_link = href if href.startswith('http') else f"https://pgm.gsb.gov.tr/{href.lstrip('/')}"
-                    toplanan.append({
+                    ilanlar.append({
                         "baslik": text[:180],
                         "link": full_link,
                         "kurum": "GSB Personel",
                         "tarih": "Güncel"
                     })
     except Exception as e:
-        print(f"GSB hata: {e}")
+        print(f"GSB Hatası: {e}")
+    return ilanlar
 
-    # 3. Kaynak: Kamu İlan SBB & Kariyer Kapısı Genel Duyurular
-    try:
-        url3 = "https://kamuilan.sbb.gov.tr/"
-        res = requests.get(url3, headers=HEADERS, timeout=15)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.content, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                text = a.get_text(strip=True)
-                href = a['href']
-                if len(text) > 12:
-                    full_link = href if href.startswith('http') else f"https://kamuilan.sbb.gov.tr/{href.lstrip('/')}"
-                    toplanan.append({
-                        "baslik": text[:180],
-                        "link": full_link,
-                        "kurum": "SBB Kamu İlan",
-                        "tarih": "Güncel"
-                    })
-    except Exception as e:
-        print(f"SBB Kamu İlan hata: {e}")
+def ana_calistir():
+    toplanan = []
+    
+    print("1. ilan.gov.tr taranıyor...")
+    ig_ilanlar = ilan_gov_tr_cek()
+    toplanan.extend(ig_ilanlar)
+    print(f"   -> {len(ig_ilanlar)} ilan çekildi.")
+    
+    print("2. GSB taranıyor...")
+    gsb_ilanlar = gsb_cek()
+    toplanan.extend(gsb_ilanlar)
+    print(f"   -> {len(gsb_ilanlar)} ilan çekildi.")
 
-    print(f"Süzülen toplam ilan sayısı: {len(toplanan)}")
+    print(f"\nToplam {len(toplanan)} ilan Supabase'e gönderiliyor...")
 
-    # Supabase'e Yazma
     basarili = 0
     for item in toplanan:
         try:
             supabase.table('ilanlar').upsert(item, on_conflict='link').execute()
             basarili += 1
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Ekleme hatası: {e}")
 
-    print(f"Supabase'e başarıyla yazılan: {basarili}")
+    print(f"Sonuç: {basarili} adet ilan başarıyla eklendi!")
 
 if __name__ == "__main__":
-    ilanlari_topla()
+    ana_calistir()
