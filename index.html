@@ -3,251 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KPSS ve Kamu Atama Duyuruları</title>
-    <!-- Tailwind CSS CDN -->
+    <title>KPSS & Kamu İlan Toplayıcı</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Supabase JS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- FontAwesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        darkbg: '#0B0F17',
-                        cardbg: '#161C28',
-                        borderbg: '#262F40',
-                        accent: '#3B82F6'
+                        darkbg: '#0f172a',
+                        cardbg: '#1e293b'
                     }
                 }
             }
         }
     </script>
-    <style>
-        body {
-            background-color: #0B0F17;
-            color: #F3F4F6;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #0B0F17;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #262F40;
-            border-radius: 4px;
-        }
-    </style>
 </head>
-<body class="min-h-screen flex flex-col antialiased selection:bg-blue-600 selection:text-white">
+<body class="bg-darkbg text-slate-100 min-h-screen font-sans">
+    <div class="max-w-5xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-8 border-b border-slate-700 pb-6">
+            <h1 class="text-3xl font-bold text-sky-400">KPSS & Kamu İlan Takip Portalı</h1>
+            <p class="text-slate-400 mt-2">Otomatik taranan güncel kamu ve akademisyen alım ilanları</p>
+        </header>
 
-    <!-- Header / Navbar -->
-    <header class="border-b border-borderbg bg-cardbg/80 backdrop-blur-md sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-xl">
-                    <i class="fa-solid fa-bullhorn"></i>
-                </div>
-                <div>
-                    <h1 class="text-xl font-bold text-white tracking-tight">KPSS & Atama Platformu</h1>
-                    <p class="text-xs text-gray-400">Canlı Kamu Personeli ve Akademik Duyurular</p>
-                </div>
+        <!-- Status & Filter -->
+        <div class="flex justify-between items-center mb-6">
+            <div id="status-badge" class="text-xs px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                Veriler yükleniyor...
             </div>
-            
-            <div class="flex items-center gap-3 w-full sm:w-auto">
-                <button onclick="verileriGetir()" class="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95">
-                    <i id="refresh-icon" class="fa-solid fa-rotate"></i>
-                    <span>Yenile</span>
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
-        
-        <!-- Controls & Filters Section -->
-        <div class="mb-8 space-y-4">
-            <!-- Search & Info Bar -->
-            <div class="flex flex-col sm:flex-row gap-4 justify-between items-center">
-                <!-- Search Input -->
-                <div class="relative w-full sm:w-96">
-                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm"></i>
-                    <input type="text" id="search-input" onkeyup="filtrele()" placeholder="İlan veya kurum ara..." 
-                        class="w-full pl-10 pr-4 py-2.5 bg-cardbg border border-borderbg rounded-xl text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition duration-200">
-                </div>
-
-                <!-- Stats / Counter -->
-                <div id="stats-badge" class="text-xs text-gray-400 bg-cardbg px-3 py-2 rounded-lg border border-borderbg w-full sm:w-auto text-center">
-                    Toplanan İlan Sayısı: <span id="total-count" class="font-bold text-blue-400">--</span>
-                </div>
-            </div>
-
-            <!-- Agency Badges / Quick Filters -->
-            <div class="flex flex-wrap gap-2 pt-2 border-t border-borderbg/50" id="filter-badges">
-                <button onclick="kategoriFiltrele('HEPSI')" class="filter-btn active px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white border border-blue-500 transition">Tümü</button>
-                <button onclick="kategoriFiltrele('GSB')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-cardbg text-gray-400 border border-borderbg hover:text-white transition">GSB</button>
-                <button onclick="kategoriFiltrele('İlan.gov.tr')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-cardbg text-gray-400 border border-borderbg hover:text-white transition">İlan.gov.tr</button>
-            </div>
+            <button onclick="loadData()" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 px-3 py-1.5 rounded transition">
+                ↻ Yenile
+            </button>
         </div>
 
-        <!-- Loading Spinner -->
-        <div id="loading" class="flex flex-col items-center justify-center py-20 gap-3">
-            <div class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p class="text-sm text-gray-400">Veritabanından ilanlar yükleniyor...</p>
+        <!-- Content Area -->
+        <div id="ilan-container" class="grid gap-4">
+            <!-- İlanlar buraya dinamik yüklenecek -->
         </div>
+    </div>
 
-        <!-- Empty State -->
-        <div id="empty-state" class="hidden text-center py-20 bg-cardbg/50 border border-borderbg rounded-2xl p-6">
-            <i class="fa-solid fa-folder-open text-4xl text-gray-600 mb-3"></i>
-            <h3 class="text-lg font-semibold text-gray-300">Henüz İlan Bulunamadı</h3>
-            <p class="text-sm text-gray-500 max-w-md mx-auto mt-1">Arama kriterlerinize uygun bir duyuru bulunamadı veya veritabanında henüz kayıt yok.</p>
-        </div>
-
-        <!-- Announcement List -->
-        <div id="ilan-listesi" class="grid grid-cols-1 gap-4 hidden"></div>
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="border-t border-borderbg py-6 bg-cardbg/30 text-center text-xs text-gray-500">
-        <p>Otomatik KPSS Toplayıcı Bot &bull; Supabase + GitHub Actions</p>
-    </footer>
-
-    <!-- Logic Script -->
     <script>
-        // Supabase Bağlantı Bilgileri
         const SUPABASE_URL = "https://bswaocmeujbbsnvwvpoq.supabase.co";
         const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzd2FvY21ldWpiYnNudnd2cG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzNzU3OTAsImV4cCI6MjEwNjk1MTc5MH0.50zNzY3xCDf0yfNaKbuYIxdjPKA2n7gH_5Zk-SR8Qq8";
 
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let tumIlanlar = [];
-        let aktifKategori = 'HEPSI';
-
-        async function verileriGetir() {
-            const refreshIcon = document.getElementById('refresh-icon');
-            refreshIcon.classList.add('animate-spin');
-
-            document.getElementById('loading').classList.remove('hidden');
-            document.getElementById('ilan-listesi').classList.add('hidden');
-            document.getElementById('empty-state').classList.add('hidden');
+        async function loadData() {
+            const container = document.getElementById('ilan-container');
+            const statusBadge = document.getElementById('status-badge');
+            
+            container.innerHTML = '<div class="text-center py-12 text-slate-400">İlanlar Supabase\'den çekiliyor...</div>';
 
             try {
-                const { data, error } = await supabase
-                    .from('duyurular')
+                // Tablo adını 'ilanlar' olarak sorguluyoruz
+                const { data, error } = await _supabase
+                    .from('ilanlar')
                     .select('*')
-                    .order('id', { ascending: false })
-                    .limit(100);
+                    .order('created_at', { ascending: false });
 
                 if (error) throw error;
 
-                tumIlanlar = data || [];
-                document.getElementById('total-count').innerText = tumIlanlar.length;
-                filtrele();
+                if (!data || data.length === 0) {
+                    statusBadge.innerText = "Veri Yok";
+                    statusBadge.className = "text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700";
+                    container.innerHTML = `
+                        <div class="text-center py-12 border border-dashed border-slate-700 rounded-xl">
+                            <p class="text-slate-400">Henüz veritabanında kayıtlı ilan bulunamadı.</p>
+                            <p class="text-xs text-slate-500 mt-1">Robot ilanları tarayıp ekledikçe burada listelenecektir.</p>
+                        </div>`;
+                    return;
+                }
+
+                statusBadge.innerText = `${data.length} İlan Listelendi`;
+                statusBadge.className = "text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+
+                container.innerHTML = data.map(item => `
+                    <div class="bg-cardbg border border-slate-700/60 hover:border-slate-500 transition p-5 rounded-xl shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="space-y-1">
+                            <h2 class="font-semibold text-lg text-slate-100 hover:text-sky-300 transition">
+                                <a href="${item.link || '#'}" target="_blank" rel="noopener">${item.baslik || 'Başlıksız İlan'}</a>
+                            </h2>
+                            <div class="text-xs text-slate-400 flex items-center gap-3">
+                                <span> Tarih: ${item.tarih || 'Belirtilmedi'}</span>
+                                ${item.kurum ? `<span>• Kurum: ${item.kurum}</span>` : ''}
+                            </div>
+                        </div>
+                        ${item.link ? `
+                            <a href="${item.link}" target="_blank" class="text-xs bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-lg transition font-medium whitespace-nowrap">
+                                İlanı İncele →
+                            </a>
+                        ` : ''}
+                    </div>
+                `).join('');
 
             } catch (err) {
-                console.error("Veri çekme hatası:", err);
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('empty-state').classList.remove('hidden');
-            } finally {
-                refreshIcon.classList.remove('animate-spin');
+                console.error("Supabase Hata Detayı:", err);
+                statusBadge.innerText = "Bağlantı Hatası";
+                statusBadge.className = "text-xs px-3 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20";
+                
+                container.innerHTML = `
+                    <div class="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-sm">
+                        <strong>Veriler çekilirken bir hata oluştu:</strong><br/>
+                        ${err.message || JSON.stringify(err)}
+                    </div>`;
             }
         }
 
-        function filtrele() {
-            const aramaMetni = document.getElementById('search-input').value.toLowerCase();
-            
-            const filtrelenmis = tumIlanlar.filter(item => {
-                const baslikUyumlu = item.baslik.toLowerCase().includes(aramaMetni);
-                const kurumUyumlu = (item.kurum || '').toLowerCase().includes(aramaMetni);
-                const aramaUygundu = baslikUyumlu || kurumUyumlu;
-
-                if (aktifKategori === 'HEPSI') {
-                    return aramaUygundu;
-                } else {
-                    return aramaUygundu && (item.kurum || '').toLowerCase().includes(aktifKategori.toLowerCase());
-                }
-            });
-
-            ekranaBas(filtrelenmis);
-        }
-
-        function kategoriFiltrele(kategori) {
-            aktifKategori = kategori;
-            
-            // Buton Stillerini Güncelle
-            const butonlar = document.querySelectorAll('.filter-btn');
-            butonlar.forEach(btn => {
-                if(btn.innerText.toLowerCase().includes(kategori.toLowerCase()) || (kategori === 'HEPSI' && btn.innerText === 'Tümü')) {
-                    btn.className = "filter-btn active px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white border border-blue-500 transition";
-                } else {
-                    btn.className = "filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-cardbg text-gray-400 border border-borderbg hover:text-white transition";
-                }
-            });
-
-            filtrele();
-        }
-
-        function ekranaBas(liste) {
-            const container = document.getElementById('ilan-listesi');
-            const loading = document.getElementById('loading');
-            const emptyState = document.getElementById('empty-state');
-
-            loading.classList.add('hidden');
-            container.innerHTML = '';
-
-            if (liste.length === 0) {
-                emptyState.classList.remove('hidden');
-                container.classList.add('hidden');
-                return;
-            }
-
-            emptyState.classList.add('hidden');
-            container.classList.remove('hidden');
-
-            liste.forEach(item => {
-                const card = document.createElement('div');
-                card.className = "bg-cardbg border border-borderbg rounded-xl p-5 hover:border-gray-600 transition-all duration-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group";
-
-                let kurumRenk = "bg-blue-500/10 text-blue-400 border-blue-500/20";
-                if((item.kurum || '').includes("GSB")) {
-                    kurumRenk = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-                } else if((item.kurum || '').includes("İlan.gov.tr")) {
-                    kurumRenk = "bg-amber-500/10 text-amber-400 border-amber-500/20";
-                }
-
-                card.innerHTML = `
-                    <div class="space-y-2 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${kurumRenk}">
-                                <i class="fa-solid fa-building text-[10px]"></i>
-                                ${item.kurum || 'Resmi Duyuru'}
-                            </span>
-                            <span class="text-xs text-gray-500">
-                                <i class="fa-regular fa-clock mr-1"></i>${item.tarih || 'Güncel'}
-                            </span>
-                        </div>
-                        <h3 class="text-base font-semibold text-gray-100 group-hover:text-blue-400 transition">
-                            ${item.baslik}
-                        </h3>
-                    </div>
-                    <a href="${item.link}" target="_blank" rel="noopener noreferrer" 
-                       class="w-full md:w-auto px-4 py-2.5 bg-borderbg hover:bg-blue-600 text-gray-200 hover:text-white rounded-lg text-sm font-medium transition duration-200 flex items-center justify-center gap-2 border border-borderbg hover:border-blue-500 shrink-0">
-                        <span>İlanı İncele</span>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
-                    </a>
-                `;
-                container.appendChild(card);
-            });
-        }
-
-        // Sayfa Yüklendiğinde Otomatik Çalıştır
-        verileriGetir();
+        document.addEventListener("DOMContentLoaded", loadData);
     </script>
 </body>
 </html>
