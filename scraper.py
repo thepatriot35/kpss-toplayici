@@ -8,59 +8,72 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def ilanlari_cikar():
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    
-    # Test ve başlangıç verisi (Sitenin boş kalmaması ve bağlantıyı doğrulamak için)
-    ilanlar = [
-        {
-            "baslik": "Sistem Bağlantı Test İlanı - KPSS Personel Alımı",
-            "link": "https://www.resmigazete.gov.tr",
-            "kurum": "Kamu Personeli Portalı",
-            "tarih": "Bugün"
-        }
-    ]
-    
-    # Örnek kaynak: Resmi Gazete / İlan Portalı tarama
-    url = "https://www.resmigazete.gov.tr/ilanlar"
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        print(f"Web sitesi yanıt kodu: {response.status_code}")
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            links = soup.find_all('a', href=True)
-            
-            for a in links:
-                text = a.get_text(strip=True)
-                href = a['href']
-                
-                # İlan içeren kelimeleri filtreleme
-                if any(kelime in text.lower() for kelime in ['memur', 'alımı', 'personel', 'kpss', 'akademik']):
-                    full_link = href if href.startswith('http') else f"https://www.resmigazete.gov.tr/{href.lstrip('/')}"
-                    ilanlar.append({
-                        "baslik": text[:150],
-                        "link": full_link,
-                        "kurum": "Resmi Gazete",
-                        "tarih": "Güncel"
-                    })
-    except Exception as e:
-        print(f"Scrape sırasında hata oluştu: {e}")
+# Taranacak Hedef Adresler
+KAYNAKLAR = [
+    {"ad": "SBB Kamu İlan", "url": "https://kamuilan.sbb.gov.tr/"},
+    {"ad": "Kariyer Kapısı", "url": "https://kariyerkapisi.gov.tr/isealim"},
+    {"ad": "GSB Personel", "url": "https://pgm.gsb.gov.tr/"},
+    {"ad": "İlan.gov.tr Akademik/Kamu", "url": "https://www.ilan.gov.tr/ilan/kategori/8/kamu-akademik-personel"}
+]
 
-    print(f"Toplam {len(ilanlar)} adet ilan işleniyor...")
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
+}
 
-    # Supabase veritabanına aktarma
-    eklenen_sayisi = 0
-    for ilan in ilanlar:
+def siteleri_tara():
+    toplanan_ilanlar = []
+    
+    for kaynak in KAYNAKLAR:
+        print(f"Taraniyor: {kaynak['ad']} ({kaynak['url']})")
         try:
-            res = supabase.table('ilanlar').upsert(ilan, on_conflict='link').execute()
-            eklenen_sayisi += 1
+            res = requests.get(kaynak['url'], headers=HEADERS, timeout=12)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.content, 'html.parser')
+                links = soup.find_all('a', href=True)
+                
+                bulunan_sayi = 0
+                for a in links:
+                    text = a.get_text(strip=True)
+                    href = a['href']
+                    
+                    # Filtreleme kriterleri
+                    if len(text) > 12 and any(k in text.lower() for k in ['alımı', 'personel', 'memur', 'sözleşmeli', 'akademik', 'kpss', 'duyuru', 'ilan']):
+                        # Tam URL oluşturma
+                        if href.startswith('http'):
+                            full_url = href
+                        elif href.startswith('/'):
+                            base_domain = '/'.join(kaynak['url'].split('/')[:3])
+                            full_url = f"{base_domain}{href}"
+                        else:
+                            full_url = f"{kaynak['url'].rstrip('/')}/{href}"
+
+                        toplanan_ilanlar.append({
+                            "baslik": text[:180],
+                            "link": full_url,
+                            "kurum": kaynak['ad'],
+                            "tarih": "Güncel"
+                        })
+                        bulunan_sayi += 1
+                
+                print(f"-> {kaynak['ad']} kaynağından {bulunan_sayi} adet başlık süzüldü.")
+            else:
+                print(f"-> {kaynak['ad']} yanıt vermedi (Status: {res.status_code})")
+        except Exception as e:
+            print(f"-> {kaynak['ad']} taranırken hata: {e}")
+
+    print(f"\nToplam {len(toplanan_ilanlar)} adet potansiyel ilan toplandı. Supabase'e aktarılıyor...")
+
+    # Supabase'e Ekleme
+    basarili = 0
+    for ilan in toplanan_ilanlar:
+        try:
+            supabase.table('ilanlar').upsert(ilan, on_conflict='link').execute()
+            basarili += 1
         except Exception as err:
-            print(f"Veri ekleme hatası ({ilan['baslik'][:20]}...): {err}")
-            
-    print(f"Başarıyla Supabase'e kaydedilen: {eklenen_sayisi}")
+            pass # Mükerrer veya hatalı verileri sessizce atla
+
+    print(f"İşlem Tamamlandı! Toplam {basarili} ilan Supabase'e eklendi/güncellendi.")
 
 if __name__ == "__main__":
-    ilanlari_cikar()
+    siteleri_tara()
