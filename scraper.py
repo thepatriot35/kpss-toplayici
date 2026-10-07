@@ -4,11 +4,10 @@ from bs4 import BeautifulSoup
 from supabase import create_client, Client
 
 # Supabase Bağlantısı
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = "https://bswaocmeujbbsnvwvpoq.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzd2FvY21ldWpiYnNudnd2cG9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzNzU3OTAsImV4cCI6MjEwNjk1MTc5MH0.50zNzY3xCDf0yfNaKbuYIxdjPKA2n7gH_5Zk-SR8Qq8"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 def ilani_kaydet(baslik, link, kurum, tarih):
     """Veritabanına mükerrer kontrolü ile ilan ekler"""
     try:
